@@ -24,107 +24,142 @@ namespace PC_Heal_Service
         protected override void OnStart(string[] args)
         {
             timer = new Timer();
-            timer.Interval = 1000;
+            timer.Interval = 2000;
             timer.Elapsed += timer_Tick;
             timer.Enabled = true;
-            Utilities.WriteFile("Service started!");
-            Utilities.WriteFile(StaticInformation());
+            //Utilities.WriteFile("Service started!");
+            //Utilities.WriteFile(StaticInformation());
         }
 
         private void timer_Tick(object sender, ElapsedEventArgs args)
         {
             // Xử lý một vài logic ở đây
-            Utilities.WriteFile(StaticInformation() + NonStaticInformation());
+            try
+            {
+                CI computer = GetCI();
+                SendToServer.Send(computer);
+            }
+            catch (Exception)
+            {
+
+                throw;
+            }
+            
         }
 
         protected override void OnStop()
         {
-            // Ghi log lại khi Services đã được stop
-            timer.Enabled = true;
-            Utilities.WriteFile("Service stopped!");
+            //// Ghi log lại khi Services đã được stop
         }
-        string StaticInformation()
+        static CI GetCI()
         {
-            string result = "";
+            var computerInfor = new CI();
             using (var computer_System = new System.Management.ManagementObjectSearcher("Select * from Win32_ComputerSystem").Get())
             {
-                foreach (var item in computer_System)
+                try
                 {
-                    result += "Computer Name: " + item["Name"].ToString() + "\n";
-                    result += "NumberOfProcessors: " + item["NumberOfProcessors"].ToString() + "\n";
-                    result += "NumberOfLogicalProcessors: " + item["NumberOfLogicalProcessors"].ToString() + "\n";
+                    foreach (var item in computer_System)
+                    {
+                        computerInfor.ComputerName = item["Name"].ToString();
+                        computerInfor.NumberOfProcessors = item["NumberOfProcessors"].ToString();
+                        computerInfor.NumberOfLogicalProcessors = item["NumberOfLogicalProcessors"].ToString();
+                    }
                 }
+                catch (Exception)
+                {
+                    //ignore
+                }
+
             }
 
             using (var processor = new System.Management.ManagementObjectSearcher("Select * from Win32_Processor").Get())
             {
-                foreach (var item in processor)
+                try
                 {
-                    result += "Processor: " + item["Name"].ToString() + "\n";
+                    foreach (var item in processor)
+                    {
+                        computerInfor.ProcessorName = item["Name"].ToString();
+                        break;
+                    }
+                }
+                catch (Exception)
+                {
+                    //ignore
                 }
             }
-            //get IP, MAC Address
-            ManagementClass mgmt = new ManagementClass("Win32_NetworkAdapterConfiguration");
-            ManagementObjectCollection objCol = mgmt.GetInstances();
+
             string IP = String.Empty;
             string MAC = String.Empty;
 
             using (var network = new ManagementClass("Win32_NetworkAdapterConfiguration"))
             {
-
-
-                foreach (var item in network.GetInstances())
+                try
                 {
-                    if (MAC == String.Empty)
+                    foreach (var item in network.GetInstances())
                     {
-                        if ((bool)item["IPEnabled"] == true)
+                        if (MAC == String.Empty)
                         {
-                            MAC = item["MACAddress"].ToString();
-                            String[] IPs = (String[])item["IPAddress"];
-                            IP = IPs[0];
+                            if ((bool)item["IPEnabled"] == true)
+                            {
+                                MAC = item["MACAddress"].ToString();
+                                String[] IPs = (String[])item["IPAddress"];
+                                IP = IPs[0];
+                            }
                         }
                     }
+                    computerInfor.IPAddress = IP;
+                    computerInfor.MACAddress = MAC;
+                }
+                catch (Exception)
+                {
+
                 }
             }
-            result += "IP Address: " + IP + "\n";
-            result += "Mac Address: " + MAC + "\n";
 
-            return result;
 
-        }
-        string NonStaticInformation()
-        {
-            string result = "";
             DriveInfo dDisk = new DriveInfo("D");
             DriveInfo cDisk = new DriveInfo("C");
-
-            result += "C Disk Free: " + ((cDisk.AvailableFreeSpace / (float)cDisk.TotalSize) * 100).ToString("00.00") + "%\n";
-            result += "D Disk Free: " + ((dDisk.AvailableFreeSpace / (float)dDisk.TotalSize) * 100).ToString("00.00") + "%\n";
+            computerInfor.C_DiskFree = ((cDisk.AvailableFreeSpace / (float)cDisk.TotalSize) * 100).ToString("00.00");
+            computerInfor.D_DiskFree = ((dDisk.AvailableFreeSpace / (float)dDisk.TotalSize) * 100).ToString("00.00");
 
             using (var processor = new ManagementObjectSearcher("root\\CIMV2",
                     "SELECT * FROM Win32_PerfFormattedData_PerfOS_Processor").Get())
             {
                 double total = 0;
                 int n = 0;
-                foreach (var item in processor)
+                try
                 {
-                    total += Convert.ToDouble(item["PercentProcessorTime"]);
-                    n++;
-                }
+                    foreach (var item in processor)
+                    {
+                        total += Convert.ToDouble(item["PercentProcessorTime"]);
+                        n++;
+                    }
 
-                result += "CPU Usage: " + String.Format("{0:0.0}", 
-                    total / n) + "%\n";
+                    computerInfor.CPU_Usage = String.Format("{0:0.0}", total / n);
+                }
+                catch (Exception)
+                {
+                    //
+                }
             }
 
-            using (var operating = new ManagementObjectSearcher("root\\CIMV2",
-                    "SELECT * FROM Win32_OperatingSystem").Get())
+            using (var operating = new ManagementObjectSearcher("root\\CIMV2", "SELECT * FROM Win32_OperatingSystem").Get())
             {
-                foreach (var item in operating)
+                try
                 {
-                    result += "RAM Usage: " + ((int.Parse(item["FreePhysicalMemory"].ToString()) / (float)int.Parse(item["TotalVisibleMemorySize"].ToString())) * 100).ToString("00.00") + "%\n";
+                    foreach (var item in operating)
+                    {
+                        computerInfor.RAM_Usage = ((int.Parse(item["FreePhysicalMemory"].ToString()) / (float)int.Parse(item["TotalVisibleMemorySize"].ToString())) * 100).ToString("00.00");
+                    }
+                }
+                catch (Exception)
+                {
+                    //
                 }
             }
-            return result;
+
+            return computerInfor;
         }
+        
     }
 }
